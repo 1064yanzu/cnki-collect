@@ -1,0 +1,6 @@
+pdfplumber
+beautifulsoup4
+selenium
+selenium-wire
+pandas
+undetected-chromedriver
