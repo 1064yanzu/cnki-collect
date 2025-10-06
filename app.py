@@ -181,6 +181,7 @@ def scrape_keyword():
         data = request.get_json()
         keywords = data.get('keywords', list(Config.KEYWORDS))
         result_count = data.get('result_count', Config.RESULT_COUNT)
+        literature_type = data.get('literature_type', Config.DEFAULT_LITERATURE_TYPE)
         
         # 重置任务状态
         task_status.update({
@@ -193,19 +194,53 @@ def scrape_keyword():
         
         def run_keyword_scraper():
             try:
-                web_logger.info(f"开始关键词搜索: {keywords}, 结果数量: {result_count}")
+                lit_name = Config.LITERATURE_TYPES[literature_type]['name']
+                web_logger.info(f"开始关键词搜索: {keywords}, 文献类型: {lit_name}, 结果数量: {result_count}")
                 
                 scraper = KeywordScraper()
-                results = scraper.search_keywords(keywords, result_count)
+                results = scraper.search_keywords(keywords, result_count, literature_type)
+                
+                # 自动导出 JSON 与 CSV
+                fm = FileManager()
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                json_path = Config.EXPORT_DIR / f"keyword_{lit_name}_{timestamp}.json"
+                csv_path = Config.EXPORT_DIR / f"keyword_{lit_name}_{timestamp}.csv"
+                
+                # JSON：直接保存完整结果
+                fm.save_json({'keywords': keywords, 'literature_type': literature_type, 'results': results}, json_path)
+                
+                # CSV：展开为文章行
+                rows = []
+                for r in results:
+                    kw = r.get('keyword')
+                    status = r.get('status')
+                    articles = r.get('articles', [])
+                    if status == 'success':
+                        for a in articles:
+                            rows.append({
+                                'keyword': kw,
+                                'title': a.get('title'),
+                                'url': a.get('url'),
+                                'authors': a.get('authors'),
+                                'journal': a.get('journal'),
+                                'publish_date': a.get('publish_date'),
+                                'literature_type': a.get('literature_type') or literature_type,
+                                'source_type': a.get('source_type'),
+                                'created_at': a.get('created_at')
+                            })
+                    else:
+                        rows.append({'keyword': kw, 'title': None, 'url': None, 'authors': None, 'journal': None, 'publish_date': None, 'literature_type': literature_type, 'source_type': 'keyword_search', 'created_at': None})
+                headers = ['keyword','title','url','authors','journal','publish_date','literature_type','source_type','created_at']
+                fm.save_csv(rows, headers, csv_path)
                 
                 task_status.update({
                     'running': False,
                     'progress': 100,
-                    'message': '关键词搜索完成',
+                    'message': '关键词搜索完成（已导出 JSON/CSV）',
                     'results': results
                 })
                 
-                web_logger.info(f"关键词搜索完成，共搜索 {len(keywords)} 个关键词")
+                web_logger.info(f"关键词搜索完成，共搜索 {len(keywords)} 个关键词，导出文件：{json_path.name} / {csv_path.name}")
                 socketio.emit('task_complete', task_status)
                 
             except Exception as e:
@@ -290,6 +325,8 @@ def get_articles():
         per_page = int(request.args.get('per_page', 20))
         search_query = request.args.get('search', '')
         source_type = request.args.get('source_type', '')
+        keyword = request.args.get('keyword', '')
+        literature_type = request.args.get('literature_type', '')
         
         offset = (page - 1) * per_page
         
@@ -297,13 +334,17 @@ def get_articles():
             limit=per_page,
             offset=offset,
             search_query=search_query if search_query else None,
-            source_type=source_type if source_type else None
+            source_type=source_type if source_type else None,
+            keyword=keyword if keyword else None,
+            literature_type=literature_type if literature_type else None
         )
         
         # 获取总数
         total_count = db.get_articles_count(
             search_query=search_query if search_query else None,
-            source_type=source_type if source_type else None
+            source_type=source_type if source_type else None,
+            keyword=keyword if keyword else None,
+            literature_type=literature_type if literature_type else None
         )
         
         return jsonify({
@@ -572,6 +613,7 @@ def scrape_keyword_with_task():
         data = request.get_json()
         keywords = data.get('keywords', [])
         result_count = data.get('result_count', Config.RESULT_COUNT)
+        literature_type = data.get('literature_type', Config.DEFAULT_LITERATURE_TYPE)
         
         if not keywords:
             return jsonify({'success': False, 'error': '请提供关键词'})
@@ -582,7 +624,7 @@ def scrape_keyword_with_task():
         
         # 为每个关键词创建任务
         for keyword in keywords:
-            task_id = scraper.scrape_keyword_with_task(keyword, result_count)
+            task_id = scraper.scrape_keyword_with_task(keyword, result_count, literature_type)
             task_ids.append(task_id)
         
         return jsonify({
@@ -591,6 +633,39 @@ def scrape_keyword_with_task():
             'task_ids': task_ids
         })
         
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/literature/types', methods=['GET'])
+def get_literature_types():
+    """获取可用的文献类型"""
+    try:
+        types = []
+        for key, value in Config.LITERATURE_TYPES.items():
+            types.append({
+                'key': key,
+                'name': value['name'],
+                'classid': value['classid']
+            })
+        
+        return jsonify({
+            'success': True,
+            'types': types,
+            'default': Config.DEFAULT_LITERATURE_TYPE
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/literature/stats', methods=['GET'])
+def get_literature_stats():
+    """获取文献类型统计"""
+    try:
+        stats = db.get_literature_type_stats()
+        return jsonify({
+            'success': True,
+            'stats': stats
+        })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
@@ -610,6 +685,65 @@ def get_link_files():
         
         return jsonify({'success': True, 'data': link_files})
     
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/files/exports')
+def get_export_files():
+    """获取导出文件列表"""
+    try:
+        files = []
+        for file_path in Config.EXPORT_DIR.glob('*.*'):
+            if file_path.is_file():
+                files.append({
+                    'name': file_path.name,
+                    'path': str(file_path),
+                    'size': file_path.stat().st_size,
+                    'modified': datetime.fromtimestamp(file_path.stat().st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                })
+        return jsonify({'success': True, 'data': files})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/files/logs')
+def get_log_files():
+    """获取日志文件列表"""
+    try:
+        files = []
+        for file_path in Config.LOG_DIR.glob('*.log'):
+            if file_path.is_file():
+                files.append({
+                    'name': file_path.name,
+                    'path': str(file_path),
+                    'size': file_path.stat().st_size,
+                    'modified': datetime.fromtimestamp(file_path.stat().st_mtime).strftime('%Y-%m-%d %H:%M:%S')
+                })
+        return jsonify({'success': True, 'data': files})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+# 安全文件打开接口
+@app.route('/api/files/open')
+def open_file():
+    """在受控目录内打开或下载文件"""
+    try:
+        path_str = request.args.get('path')
+        if not path_str:
+            return jsonify({'success': False, 'error': '缺少参数: path'})
+        file_path = Path(path_str).resolve()
+        allowed_dirs = [
+            Config.LINK_DIR.resolve(),
+            Config.SAVE_DIR.resolve(),
+            Config.EXPORT_DIR.resolve(),
+            Config.LOG_DIR.resolve()
+        ]
+        # 校验路径在受控目录内，避免路径遍历
+        if not any((d == file_path or d in file_path.parents) for d in allowed_dirs):
+            return jsonify({'success': False, 'error': '非法路径，拒绝访问'})
+        if not file_path.exists() or not file_path.is_file():
+            return jsonify({'success': False, 'error': '文件不存在'})
+        # 直接预览，不强制下载；如需下载可设置 as_attachment=True
+        return send_file(str(file_path), as_attachment=False)
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 

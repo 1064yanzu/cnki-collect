@@ -16,6 +16,9 @@ class Config:
     BASE_DIR = Path(__file__).parent
     SAVE_DIR = BASE_DIR / 'saves'
     LINK_DIR = BASE_DIR / 'links'
+    # 新增：日志与导出目录
+    LOG_DIR = BASE_DIR / 'logs'
+    EXPORT_DIR = BASE_DIR / 'exports'
     
     # ChromeDriver配置 - 自动检测系统类型
     @staticmethod
@@ -69,6 +72,33 @@ class Config:
     KEYWORDS = {'播客'}  # 默认搜索关键词
     RESULT_COUNT = 100  # 每个关键词搜索结果数量
     
+    # 文献类型配置
+    LITERATURE_TYPES = {
+        'journal': {
+            'name': '期刊论文',
+            'classid': 'YSTT4HG0',
+            'description': '学术期刊发表的论文'
+        },
+        'thesis': {
+            'name': '学位论文',
+            'classid': 'LSTPFY1C', 
+            'description': '硕士、博士学位论文'
+        },
+        'conference': {
+            'name': '会议论文',
+            'classid': 'WD0FTY92',
+            'description': '学术会议发表的论文'
+        },
+        'newspaper': {
+            'name': '报纸',
+            'classid': 'CCND',
+            'description': '报纸文章'
+        }
+    }
+    
+    # 默认文献类型
+    DEFAULT_LITERATURE_TYPE = 'journal'
+    
     # 期刊配置
     EXCEL_FILE = 'testing_journals.xls'  # 期刊列表文件
     YEAR_RANGE = [2014, 2022]  # 年份范围
@@ -82,7 +112,7 @@ class Config:
     @classmethod
     def ensure_directories(cls):
         """确保所有必要目录存在"""
-        for directory in [cls.SAVE_DIR, cls.LINK_DIR]:
+        for directory in [cls.SAVE_DIR, cls.LINK_DIR, cls.LOG_DIR, cls.EXPORT_DIR]:
             directory.mkdir(parents=True, exist_ok=True)
     
     @classmethod

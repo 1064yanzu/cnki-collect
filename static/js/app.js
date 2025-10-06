@@ -19,6 +19,10 @@ class CNKIApp {
         this.initWebSocket();
         this.bindEvents();
         this.loadInitialData();
+        // 让资源中心管理器可在全局访问
+        if (window.resourceManager) {
+            this.resourceManager = window.resourceManager;
+        }
     }
     
     initWebSocket() {
@@ -87,6 +91,13 @@ class CNKIApp {
             case '#download-panel':
                 this.loadDownloadTasks();
                 break;
+            case '#resources-panel':
+                if (this.resourceManager) {
+                    this.resourceManager.onShow();
+                } else if (window.resourceManager) {
+                    window.resourceManager.onShow();
+                }
+                break;
         }
     }
     
@@ -100,6 +111,12 @@ class CNKIApp {
             }
             if (articleManager) {
                 articleManager.loadArticles();
+            }
+            // 搜索完成后也刷新资源中心导出文件
+            if (this.resourceManager) {
+                this.resourceManager.loadExportFiles();
+            } else if (window.resourceManager) {
+                window.resourceManager.loadExportFiles();
             }
         }
     }

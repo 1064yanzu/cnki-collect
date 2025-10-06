@@ -8,13 +8,14 @@ class ArticleManager {
         this.app = app;
     }
     
-    async loadArticles(page = 1, search = '', keyword = '') {
+    async loadArticles(page = 1, search = '', keyword = '', literatureType = '') {
         try {
             const params = new URLSearchParams({
                 page: page,
                 per_page: this.app.articlesPerPage,
                 search: search,
-                keyword: keyword
+                keyword: keyword,
+                literature_type: literatureType
             });
             
             const response = await fetch(`/api/articles?${params}`);
@@ -30,6 +31,8 @@ class ArticleManager {
                 // 从文章数据中提取关键词
                 const keywords = [...new Set(result.articles.map(article => article.keyword).filter(k => k))];
                 this.updateKeywordFilter(keywords);
+                // 加载文献类型统计
+                this.loadLiteratureStats();
             } else {
                 this.app.addLog('error', `加载文章失败: ${result.error}`);
             }
@@ -61,6 +64,11 @@ class ArticleManager {
         const downloadedBadge = article.status === 'downloaded' ? 
             '<span class="tag" style="background: #28a745; color: white;">已下载</span>' : '';
         
+        // 获取文献类型显示名称和样式
+        const literatureTypeInfo = this.getLiteratureTypeInfo(article.literature_type);
+        const literatureTypeBadge = literatureTypeInfo ? 
+            `<span class="tag" style="background: ${literatureTypeInfo.color}; color: white;">${literatureTypeInfo.name}</span>` : '';
+        
         return `
             <div class="article-card ${isSelected ? 'selected' : ''}" data-id="${article.id}">
                 <div class="d-flex justify-content-between align-items-start">
@@ -73,6 +81,7 @@ class ArticleManager {
                         </div>
                         <div class="article-tags">
                             <span class="tag keyword">${article.keyword}</span>
+                            ${literatureTypeBadge}
                             ${downloadedBadge}
                         </div>
                         ${article.abstract ? `<div class="article-abstract">${article.abstract}</div>` : ''}
@@ -97,7 +106,11 @@ class ArticleManager {
     }
     
     updatePagination() {
-        const pagination = document.getElementById('articlesPagination');
+        const pagination = document.getElementById('pagination');
+        if (!pagination) {
+            // 若分页容器不存在则直接返回，避免空引用错误
+            return;
+        }
         
         if (this.app.totalPages <= 1) {
             pagination.innerHTML = '';
@@ -146,7 +159,8 @@ class ArticleManager {
     searchArticles() {
         const search = document.getElementById('articleSearch').value;
         const keyword = document.getElementById('keywordFilter').value;
-        this.loadArticles(1, search, keyword);
+        const literatureType = document.getElementById('literatureTypeFilter').value;
+        this.loadArticles(1, search, keyword, literatureType);
     }
     
     toggleSelection(articleId) {
@@ -178,11 +192,13 @@ class ArticleManager {
     
     updateSelectionToolbar() {
         const toolbar = document.getElementById('selectionToolbar');
-        const countSpan = document.getElementById('selectedCount');
+        const countSpan = document.querySelector('#selectedCount, .selection-count');
         
         if (this.app.selectedArticles.size > 0) {
             toolbar.style.display = 'block';
-            countSpan.textContent = `已选择 ${this.app.selectedArticles.size} 篇文章`;
+            if (countSpan) {
+                countSpan.textContent = `已选择 ${this.app.selectedArticles.size} 篇文章`;
+            }
         } else {
             toolbar.style.display = 'none';
         }
@@ -249,6 +265,79 @@ class ArticleManager {
             }
         } catch (error) {
             this.app.addLog('error', `网络错误: ${error.message}`);
+        }
+    }
+    
+    getLiteratureTypeInfo(literatureType) {
+        const typeMap = {
+            'journal': { name: '期刊论文', color: '#007bff' },
+            'thesis': { name: '学位论文', color: '#6f42c1' },
+            'conference': { name: '会议论文', color: '#fd7e14' },
+            'newspaper': { name: '报纸文章', color: '#20c997' },
+            'book': { name: '图书', color: '#dc3545' },
+            'standard': { name: '标准', color: '#6c757d' },
+            'patent': { name: '专利', color: '#ffc107' },
+            'yearbook': { name: '年鉴', color: '#e83e8c' }
+        };
+        return typeMap[literatureType] || (literatureType ? { name: literatureType, color: '#6c757d' } : null);
+    }
+    
+    async loadLiteratureStats() {
+        try {
+            const response = await fetch('/api/literature/stats');
+            const result = await response.json();
+            
+            if (result.success) {
+                this.displayLiteratureStats(result.stats);
+            } else {
+                console.error('加载文献类型统计失败:', result.error);
+            }
+        } catch (error) {
+            console.error('网络错误:', error.message);
+        }
+    }
+    
+    displayLiteratureStats(stats) {
+        const statsContainer = document.getElementById('statsContent');
+        const literatureStatsPanel = document.getElementById('literatureStats');
+        
+        if (stats.length === 0) {
+            literatureStatsPanel.style.display = 'none';
+            return;
+        }
+        
+        literatureStatsPanel.style.display = 'block';
+        
+        const statsHtml = stats.map(stat => {
+            const typeInfo = this.getLiteratureTypeInfo(stat.literature_type);
+            const typeName = typeInfo ? typeInfo.name : stat.literature_type;
+            const typeColor = typeInfo ? typeInfo.color : '#6c757d';
+            
+            return `
+                <div class="col-md-3 col-sm-6 mb-2">
+                    <div class="stat-item p-2 border rounded" style="border-left: 4px solid ${typeColor} !important;">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="stat-label">${typeName}</span>
+                            <span class="badge" style="background-color: ${typeColor};">${stat.count}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        statsContainer.innerHTML = statsHtml;
+    }
+    
+    toggleStats() {
+        const statsContent = document.getElementById('statsContent');
+        const toggleIcon = document.getElementById('statsToggleIcon');
+        
+        if (statsContent.style.display === 'none') {
+            statsContent.style.display = 'block';
+            toggleIcon.className = 'bi bi-eye-slash';
+        } else {
+            statsContent.style.display = 'none';
+            toggleIcon.className = 'bi bi-eye';
         }
     }
 }

@@ -37,6 +37,7 @@ class DatabaseManager:
                     publish_date TEXT,
                     keywords TEXT,
                     source_type TEXT,  -- 'keyword_search' 或 'journal_scrape'
+                    literature_type TEXT,  -- 文献类型，如 'journal', 'thesis', 'conference', 'newspaper'
                     file_path TEXT,
                     download_status TEXT DEFAULT 'pending',  -- 'pending', 'downloading', 'completed', 'failed'
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -44,17 +45,32 @@ class DatabaseManager:
                 )
             ''')
             
+            # 为现有的articles表添加literature_type字段（如果不存在）
+            try:
+                cursor.execute('ALTER TABLE articles ADD COLUMN literature_type TEXT')
+            except sqlite3.OperationalError:
+                # 字段已存在，忽略错误
+                pass
+            
             # 搜索历史表
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS search_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     search_type TEXT NOT NULL,  -- 'keyword' 或 'journal'
                     search_query TEXT NOT NULL,
+                    literature_type TEXT,  -- 文献类型，如 'journal', 'thesis', 'conference', 'newspaper'
                     result_count INTEGER DEFAULT 0,
                     status TEXT DEFAULT 'completed',  -- 'running', 'completed', 'failed'
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+            
+            # 为现有的search_history表添加literature_type字段（如果不存在）
+            try:
+                cursor.execute('ALTER TABLE search_history ADD COLUMN literature_type TEXT')
+            except sqlite3.OperationalError:
+                # 字段已存在，忽略错误
+                pass
             
             # 用户收藏表
             cursor.execute('''
@@ -145,7 +161,7 @@ class DatabaseManager:
             placeholders = ['?', '?']
             
             for key, value in kwargs.items():
-                if key in ['abstract', 'authors', 'journal', 'publish_date', 'keywords', 'source_type']:
+                if key in ['abstract', 'authors', 'journal', 'publish_date', 'keywords', 'source_type', 'literature_type']:
                     fields.append(key)
                     values.append(value)
                     placeholders.append('?')
@@ -163,7 +179,8 @@ class DatabaseManager:
             return article_id
     
     def get_articles(self, limit: int = 100, offset: int = 0, 
-                    search_query: str = None, source_type: str = None) -> List[Dict]:
+                    search_query: str = None, source_type: str = None,
+                    keyword: str = None, literature_type: str = None) -> List[Dict]:
         """获取文章列表"""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
@@ -181,6 +198,14 @@ class DatabaseManager:
                 query += ' AND source_type = ?'
                 params.append(source_type)
             
+            if keyword:
+                query += ' AND keyword = ?'
+                params.append(keyword)
+            
+            if literature_type:
+                query += ' AND literature_type = ?'
+                params.append(literature_type)
+            
             query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
             params.extend([limit, offset])
             
@@ -189,7 +214,8 @@ class DatabaseManager:
             
             return articles
     
-    def get_articles_count(self, search_query: str = None, source_type: str = None) -> int:
+    def get_articles_count(self, search_query: str = None, source_type: str = None,
+                          keyword: str = None, literature_type: str = None) -> int:
         """获取文章总数"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
@@ -205,6 +231,14 @@ class DatabaseManager:
             if source_type:
                 query += ' AND source_type = ?'
                 params.append(source_type)
+            
+            if keyword:
+                query += ' AND keyword = ?'
+                params.append(keyword)
+            
+            if literature_type:
+                query += ' AND literature_type = ?'
+                params.append(literature_type)
             
             cursor.execute(query, params)
             return cursor.fetchone()[0]
@@ -229,15 +263,15 @@ class DatabaseManager:
             
             conn.commit()
     
-    def add_search_history(self, search_type: str, search_query: str, result_count: int = 0) -> int:
+    def add_search_history(self, search_type: str, search_query: str, result_count: int = 0, literature_type: str = None) -> int:
         """添加搜索历史"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             
             cursor.execute('''
-                INSERT INTO search_history (search_type, search_query, result_count)
-                VALUES (?, ?, ?)
-            ''', (search_type, search_query, result_count))
+                INSERT INTO search_history (search_type, search_query, literature_type, result_count)
+                VALUES (?, ?, ?, ?)
+            ''', (search_type, search_query, literature_type, result_count))
             
             history_id = cursor.lastrowid
             conn.commit()
@@ -475,6 +509,30 @@ class DatabaseManager:
             logger.info(f"任务已恢复: {task_id}")
             return task
         return None
+    
+    def get_literature_type_stats(self) -> List[Dict]:
+        """获取文献类型统计"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT 
+                    literature_type,
+                    COUNT(*) as count
+                FROM articles 
+                WHERE literature_type IS NOT NULL AND literature_type != ''
+                GROUP BY literature_type
+                ORDER BY count DESC
+            ''')
+            
+            stats = []
+            for row in cursor.fetchall():
+                stats.append({
+                    'literature_type': row[0],
+                    'count': row[1]
+                })
+            
+            return stats
 
 # 全局数据库实例
 db = DatabaseManager()

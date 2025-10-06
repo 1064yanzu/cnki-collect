@@ -233,8 +233,18 @@
                 </button>
             </li>
             <li class="nav-item" role="presentation">
+                <button class="nav-link" id="tasks-tab" data-bs-toggle="tab" data-bs-target="#tasks-panel" type="button" role="tab">
+                    <i class="bi bi-list-task"></i> 任务管理
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
                 <button class="nav-link" id="history-tab" data-bs-toggle="tab" data-bs-target="#history-panel" type="button" role="tab">
                     <i class="bi bi-clock-history"></i> 搜索历史
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="resources-tab" data-bs-toggle="tab" data-bs-target="#resources-panel" type="button" role="tab">
+                    <i class="bi bi-folder2-open"></i> 资源中心
                 </button>
             </li>
             <li class="nav-item" role="presentation">
@@ -254,6 +264,12 @@
                         <div class="mb-3">
                             <label for="keywords" class="form-label">搜索关键词（每行一个）</label>
                             <textarea class="form-control" id="keywords" rows="5" placeholder="请输入搜索关键词，每行一个"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="literatureType" class="form-label">文献类型</label>
+                            <select class="form-select" id="literatureType">
+                                <option value="">加载中...</option>
+                            </select>
                         </div>
                         <div class="mb-3">
                             <label for="resultCount" class="form-label">每个关键词结果数量</label>
@@ -297,7 +313,7 @@
                 <!-- 搜索栏 -->
                 <div class="search-bar">
                     <div class="row">
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <input type="text" class="form-control" id="articleSearch" placeholder="搜索文章标题、作者、摘要...">
                         </div>
                         <div class="col-md-3">
@@ -306,9 +322,39 @@
                             </select>
                         </div>
                         <div class="col-md-3">
+                            <select class="form-select" id="literatureTypeFilter">
+                                <option value="">所有文献类型</option>
+                                <option value="journal">期刊论文</option>
+                                <option value="thesis">学位论文</option>
+                                <option value="conference">会议论文</option>
+                                <option value="newspaper">报纸文章</option>
+                                <option value="book">图书</option>
+                                <option value="standard">标准</option>
+                                <option value="patent">专利</option>
+                                <option value="yearbook">年鉴</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
                             <button class="btn btn-primary" onclick="articleManager.searchArticles()">
                                 <i class="bi bi-search"></i> 搜索
                             </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 文献类型统计 -->
+                <div class="literature-stats mb-3" id="literatureStats" style="display: none;">
+                    <div class="card">
+                        <div class="card-body">
+                            <h6 class="card-title">
+                                <i class="bi bi-bar-chart"></i> 文献类型统计
+                                <button class="btn btn-sm btn-outline-secondary float-end" onclick="articleManager.toggleStats()">
+                                    <i class="bi bi-eye-slash" id="statsToggleIcon"></i>
+                                </button>
+                            </h6>
+                            <div class="row" id="statsContent">
+                                <!-- 统计内容将通过JavaScript动态生成 -->
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -369,6 +415,73 @@
                 </div>
             </div>
             
+            <!-- 任务管理面板 -->
+            <div class="tab-pane fade" id="tasks-panel" role="tabpanel">
+                <h4><i class="bi bi-list-task"></i> 任务管理</h4>
+                
+                <!-- 任务控制按钮 -->
+                <div class="row mb-4">
+                    <div class="col-md-12">
+                        <button class="btn btn-primary me-2" onclick="taskManager.loadTasks()">
+                            <i class="bi bi-arrow-clockwise"></i> 刷新任务
+                        </button>
+                        <button class="btn btn-warning me-2" onclick="taskManager.pauseAllTasks()">
+                            <i class="bi bi-pause-fill"></i> 暂停所有任务
+                        </button>
+                        <button class="btn btn-success me-2" onclick="taskManager.resumeAllTasks()">
+                            <i class="bi bi-play-fill"></i> 恢复所有任务
+                        </button>
+                        <button class="btn btn-danger" onclick="taskManager.stopAllTasks()">
+                            <i class="bi bi-stop-fill"></i> 停止所有任务
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- 任务统计 -->
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <h5 class="card-title text-primary" id="runningTasksCount">0</h5>
+                                <p class="card-text">运行中</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <h5 class="card-title text-warning" id="pausedTasksCount">0</h5>
+                                <p class="card-text">已暂停</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <h5 class="card-title text-success" id="completedTasksCount">0</h5>
+                                <p class="card-text">已完成</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center">
+                            <div class="card-body">
+                                <h5 class="card-title text-danger" id="failedTasksCount">0</h5>
+                                <p class="card-text">已失败</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 任务列表 -->
+                <div id="tasksList">
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-list-task" style="font-size: 3rem;"></i>
+                        <p class="mt-3">暂无任务</p>
+                    </div>
+                </div>
+            </div>
+            
             <!-- 搜索历史面板 -->
             <div class="tab-pane fade" id="history-panel" role="tabpanel">
                 <h4><i class="bi bi-clock-history"></i> 搜索历史</h4>
@@ -376,6 +489,70 @@
                     <div class="text-center text-muted py-5">
                         <i class="bi bi-clock-history" style="font-size: 3rem;"></i>
                         <p class="mt-3">暂无搜索历史</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 资源中心面板 -->
+            <div class="tab-pane fade" id="resources-panel" role="tabpanel">
+                <h4><i class="bi bi-folder2-open"></i> 资源中心</h4>
+                <div class="d-flex justify-content-end mb-3">
+                    <button class="btn btn-outline-primary btn-sm" id="refreshResourcesBtn">
+                        <i class="bi bi-arrow-clockwise"></i> 刷新
+                    </button>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="bi bi-link-45deg"></i> 链接文件</h5>
+                                <div id="linkFilesList">
+                                    <div class="text-center text-muted py-4">
+                                        <i class="bi bi-link-45deg" style="font-size: 2rem;"></i>
+                                        <p class="mt-2">暂无链接文件</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="bi bi-download"></i> 下载文件</h5>
+                                <div id="downloadFilesList">
+                                    <div class="text-center text-muted py-4">
+                                        <i class="bi bi-download" style="font-size: 2rem;"></i>
+                                        <p class="mt-2">暂无下载文件</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="bi bi-filetype-csv"></i> 导出文件</h5>
+                                <div id="exportFilesList">
+                                    <div class="text-center text-muted py-4">
+                                        <i class="bi bi-filetype-csv" style="font-size: 2rem;"></i>
+                                        <p class="mt-2">暂无导出文件</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title"><i class="bi bi-journal-text"></i> 日志文件</h5>
+                                <div id="logFilesList">
+                                    <div class="text-center text-muted py-4">
+                                        <i class="bi bi-journal-text" style="font-size: 2rem;"></i>
+                                        <p class="mt-2">暂无日志文件</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -450,10 +627,12 @@
     <script src="/static/js/articles.js"></script>
     <script src="/static/js/search.js"></script>
     <script src="/static/js/download.js"></script>
+    <script src="/static/js/tasks.js"></script>
+    <script src="/static/js/resources.js"></script>
     
     <script>
         // 全局变量
-        let app, articleManager, searchManager, downloadManager;
+        let app, articleManager, searchManager, downloadManager, taskManager, resourceManager;
         
         // 页面加载完成后初始化
         document.addEventListener('DOMContentLoaded', function() {
@@ -464,6 +643,11 @@
             articleManager = new ArticleManager(app);
             searchManager = new SearchManager(app);
             downloadManager = new DownloadManager(app);
+            taskManager = new TaskManager(app);
+            resourceManager = new ResourceManager(app);
+            
+            // 初始化任务管理器
+            taskManager.init();
             
             // 加载初始数据
             searchManager.loadSearchHistory();

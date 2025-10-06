@@ -88,6 +88,30 @@ class TaskManager:
         db.resume_task(task_id)
         return True
     
+    def stop_task(self, task_id: int):
+        """停止任务"""
+        # 如果任务正在运行，停止它
+        if task_id in self.running_tasks:
+            task = self.running_tasks[task_id]
+            task.stop()
+            del self.running_tasks[task_id]
+            self.logger.info(f"停止运行中的任务: {task_id}")
+            return True
+        
+        # 如果任务在数据库中，更新其状态
+        task_data = db.get_task(task_id)
+        if task_data:
+            if task_data['status'] in ['pending', 'paused']:
+                db.update_task_status(task_id, 'failed', error_message='任务被手动停止')
+                self.logger.info(f"停止任务: {task_id}")
+                return True
+            else:
+                self.logger.warning(f"任务状态不允许停止: {task_data['status']}")
+                return False
+        
+        self.logger.error(f"任务不存在: {task_id}")
+        return False
+    
     def pause_all_tasks(self):
         """暂停所有运行中的任务"""
         for task_id, task in self.running_tasks.items():
@@ -97,6 +121,22 @@ class TaskManager:
     def get_task_status(self, task_id: int) -> Optional[Dict]:
         """获取任务状态"""
         return db.get_task(task_id)
+    
+    def get_task(self, task_id: int) -> Optional['Task']:
+        """获取任务对象"""
+        task_data = db.get_task(task_id)
+        if task_data:
+            # 如果任务正在运行，返回运行中的任务对象
+            if task_id in self.running_tasks:
+                return self.running_tasks[task_id]
+            # 否则创建一个临时的任务对象用于查看状态
+            class TaskInfo:
+                def __init__(self, data):
+                    self.data = data
+                def to_dict(self):
+                    return self.data
+            return TaskInfo(task_data)
+        return None
     
     def get_all_tasks(self) -> List[Dict]:
         """获取所有任务"""

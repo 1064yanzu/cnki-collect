@@ -24,7 +24,7 @@ class Logger:
     
     @staticmethod
     def setup_logger(name: str = __name__, level: int = None) -> logging.Logger:
-        """设置日志记录器"""
+        """设置日志记录器（控制台 + 按天滚动文件）"""
         if level is None:
             level = logging.DEBUG if Config.DEBUG else logging.INFO
         
@@ -33,15 +33,26 @@ class Logger:
         
         # 避免重复添加handler
         if not logger.handlers:
-            handler = logging.StreamHandler(sys.stdout)
-            formatter = logging.Formatter(
-                '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
-            )
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
+            formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+            
+            # 控制台输出
+            stream_handler = logging.StreamHandler(sys.stdout)
+            stream_handler.setFormatter(formatter)
+            logger.addHandler(stream_handler)
+            
+            # 文件输出（按天滚动）
+            try:
+                Config.ensure_directories()
+                from logging.handlers import TimedRotatingFileHandler
+                log_file = Config.LOG_DIR / 'cnki.log'
+                file_handler = TimedRotatingFileHandler(str(log_file), when='midnight', backupCount=7, encoding='utf-8')
+                file_handler.setLevel(level)
+                file_handler.setFormatter(formatter)
+                logger.addHandler(file_handler)
+            except Exception as e:
+                logger.warning(f"文件日志初始化失败: {e}")
         
         return logger
-
 
 class WebDriverManager:
     """WebDriver管理类"""
@@ -172,7 +183,7 @@ class FileManager:
             raise
     
     def save_links_to_file(self, links: list, filepath: Path, 
-                          names: list = None, years: list = None) -> None:
+                           names: list = None, years: list = None) -> None:
         """保存链接到文件"""
         try:
             self.ensure_directory(filepath.parent)
@@ -212,6 +223,33 @@ class FileManager:
         except Exception as e:
             self.logger.error(f"加载链接失败 {filepath}: {e}")
             return []
+    
+    def save_json(self, data: dict, filepath: Path) -> None:
+        """保存 JSON 文件（UTF-8，带缩进）"""
+        try:
+            self.ensure_directory(filepath.parent)
+            with open(filepath, 'w', encoding='utf-8') as f:
+                import json
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            self.logger.info(f"JSON 导出完成: {filepath}")
+        except Exception as e:
+            self.logger.error(f"保存 JSON 失败 {filepath}: {e}")
+            raise
+    
+    def save_csv(self, rows: list, headers: list, filepath: Path) -> None:
+        """保存 CSV 文件（UTF-8）"""
+        try:
+            import csv
+            self.ensure_directory(filepath.parent)
+            with open(filepath, 'w', encoding='utf-8', newline='') as f:
+                writer = csv.DictWriter(f, fieldnames=headers)
+                writer.writeheader()
+                for row in rows:
+                    writer.writerow(row)
+            self.logger.info(f"CSV 导出完成: {filepath}")
+        except Exception as e:
+            self.logger.error(f"保存 CSV 失败 {filepath}: {e}")
+            raise
 
 
 def wait_with_random_delay(min_seconds: float = 0.5, max_seconds: float = 2.0) -> None:

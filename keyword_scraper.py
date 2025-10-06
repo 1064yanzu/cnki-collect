@@ -20,30 +20,42 @@ class KeywordScraper:
     """关键词搜索爬取器"""
     
     def __init__(self):
-        self.logger = Logger.setup_logger(self.__class__.__name__)
+        """初始化关键词爬虫"""
+        self.logger = Logger.setup_logger("KeywordScraper")
         self.driver_manager = WebDriverManager()
         self.file_manager = FileManager()
         Config.ensure_directories()
     
-    def scrape_keyword_with_task(self, keyword: str, result_count: int = None) -> int:
+    def scrape_keyword_with_task(self, keyword: str, result_count: int = None, literature_type: str = None) -> int:
         """
         使用任务管理器搜索关键词（支持中断和恢复）
         
         Args:
             keyword: 搜索关键词
-            result_count: 需要收集的结果数量
+            result_count: 需要收集的结果数量，默认使用配置文件中的值
+            literature_type: 文献类型，默认为期刊论文
             
         Returns:
             任务ID
         """
-        result_count = result_count or Config.RESULT_COUNT
-        
+        if result_count is None:
+            result_count = Config.RESULT_COUNT
+        if literature_type is None:
+            literature_type = Config.DEFAULT_LITERATURE_TYPE
+            
         # 创建任务
+        task_name = f'搜索关键词: {keyword} ({Config.LITERATURE_TYPES[literature_type]["name"]})'
+        parameters = {
+            'keyword': keyword, 
+            'result_count': result_count, 
+            'literature_type': literature_type
+        }
+        
         task_id = task_manager.create_task(
             task_type='keyword_search',
-            task_name=f'关键词搜索: {keyword}',
+            task_name=task_name,
             task_func=self._scrape_keyword_task,
-            parameters={'keyword': keyword, 'result_count': result_count},
+            parameters=parameters,
             total_items=result_count,
             can_resume=True
         )
@@ -52,7 +64,7 @@ class KeywordScraper:
         task_manager.start_task(task_id)
         return task_id
     
-    def _scrape_keyword_task(self, task, keyword: str, result_count: int) -> dict:
+    def _scrape_keyword_task(self, task, keyword: str, result_count: int, literature_type: str = None) -> dict:
         """
         任务函数：搜索关键词
         
@@ -60,18 +72,24 @@ class KeywordScraper:
             task: 任务实例
             keyword: 搜索关键词
             result_count: 需要收集的结果数量
+            literature_type: 文献类型
             
         Returns:
             搜索结果统计
         """
+        if literature_type is None:
+            literature_type = Config.DEFAULT_LITERATURE_TYPE
+            
         driver = self.driver_manager.create_driver()
         
         try:
-            self.logger.info(f"开始搜索关键词: {keyword}，目标数量: {result_count}")
+            lit_config = Config.LITERATURE_TYPES[literature_type]
+            self.logger.info(f"开始搜索关键词: {keyword}，文献类型: {lit_config['name']}，目标数量: {result_count}")
             task.update_progress(current_step="初始化搜索")
             
-            # 构建搜索URL
-            search_url = f'https://kns.cnki.net/kns8s/defaultresult/index?kw={keyword}'
+            # 构建搜索URL，包含文献类型
+            search_url = f'https://kns.cnki.net/kns8s/defaultresult/index?classid={lit_config["classid"]}&korder=SU&kw={keyword}'
+            self.logger.info(f"搜索URL: {search_url}")
             driver.get(search_url)
             wait_with_random_delay(1.0, 2.0)
             
@@ -85,7 +103,7 @@ class KeywordScraper:
             # 收集搜索结果
             task.update_progress(current_step="收集搜索结果")
             links, dates, names, articles_data = self._collect_search_results_with_task(
-                driver, result_count, keyword, task
+                driver, result_count, keyword, task, literature_type
             )
             
             # 保存结果
@@ -117,7 +135,7 @@ class KeywordScraper:
                         self.logger.warning(f"保存文章到数据库失败: {e}")
                 
                 # 记录搜索历史
-                db.add_search_history('keyword', keyword, len(links))
+                db.add_search_history('keyword', keyword, len(links), literature_type)
                 
                 self.logger.info(f"关键词 '{keyword}' 搜索完成，共收集 {len(links)} 个链接，保存到数据库 {saved_count} 条")
                 
@@ -135,22 +153,27 @@ class KeywordScraper:
             driver.quit()
             self.logger.debug("WebDriver已关闭")
     
-    def scrape_keyword(self, keyword: str, result_count: int = None) -> None:
+    def scrape_keyword(self, keyword: str, result_count: int = None, literature_type: str = None) -> None:
         """
         根据关键词搜索并收集文章链接
         
         Args:
             keyword: 搜索关键词
             result_count: 需要收集的结果数量，默认使用配置值
+            literature_type: 文献类型，默认为期刊论文
         """
         result_count = result_count or Config.RESULT_COUNT
+        literature_type = literature_type or Config.DEFAULT_LITERATURE_TYPE
+        
         driver = self.driver_manager.create_driver()
         
         try:
-            self.logger.info(f"开始搜索关键词: {keyword}，目标数量: {result_count}")
+            lit_config = Config.LITERATURE_TYPES[literature_type]
+            self.logger.info(f"开始搜索关键词: {keyword}，文献类型: {lit_config['name']}，目标数量: {result_count}")
             
-            # 构建搜索URL
-            search_url = f'https://kns.cnki.net/kns8s/defaultresult/index?kw={keyword}'
+            # 构建搜索URL，包含文献类型
+            search_url = f'https://kns.cnki.net/kns8s/defaultresult/index?classid={lit_config["classid"]}&korder=SU&kw={keyword}'
+            self.logger.info(f"搜索URL: {search_url}")
             driver.get(search_url)
             wait_with_random_delay(1.0, 2.0)
             
@@ -158,7 +181,7 @@ class KeywordScraper:
             self._set_page_size(driver)
             
             # 收集搜索结果
-            links, dates, names, articles_data = self._collect_search_results(driver, result_count, keyword)
+            links, dates, names, articles_data = self._collect_search_results(driver, result_count, keyword, literature_type)
             
             # 保存结果
             if links:
@@ -176,7 +199,7 @@ class KeywordScraper:
                         self.logger.warning(f"保存文章到数据库失败: {e}")
                 
                 # 记录搜索历史
-                db.add_search_history('keyword', keyword, len(links))
+                db.add_search_history('keyword', keyword, len(links), literature_type)
                 
                 self.logger.info(f"关键词 '{keyword}' 搜索完成，共收集 {len(links)} 个链接，保存到数据库 {saved_count} 条")
             else:
@@ -215,7 +238,7 @@ class KeywordScraper:
         except Exception as e:
             self.logger.warning(f"设置分页大小失败: {e}")
     
-    def _collect_search_results_with_task(self, driver, target_count: int, keyword: str, task) -> tuple:
+    def _collect_search_results_with_task(self, driver, target_count: int, keyword: str, task, literature_type: str = None) -> tuple:
         """
         收集搜索结果（支持任务管理）
         
@@ -275,7 +298,7 @@ class KeywordScraper:
                             year = date_text.split('-')[0] if '-' in date_text else date_text
                             
                             # 尝试提取更多元数据
-                            article_data = self._extract_article_metadata(soup, i, title, link, date_text, keyword)
+                            article_data = self._extract_article_metadata(soup, i, title, link, date_text, keyword, literature_type)
                             
                             links.append(link)
                             names.append(title)
@@ -313,7 +336,7 @@ class KeywordScraper:
         self.logger.info(f"共收集到 {len(links)} 个搜索结果")
         return links, dates, names, articles_data
     
-    def _collect_search_results(self, driver, target_count: int, keyword: str = None) -> tuple:
+    def _collect_search_results(self, driver, target_count: int, keyword: str = None, literature_type: str = None) -> tuple:
         """收集搜索结果并提取元数据"""
         links = []
         dates = []
@@ -350,7 +373,7 @@ class KeywordScraper:
                     year = date_text.split('-')[0] if '-' in date_text else date_text
                     
                     # 尝试提取更多元数据
-                    article_data = self._extract_article_metadata(soup, i, title, link, date_text, keyword)
+                    article_data = self._extract_article_metadata(soup, i, title, link, date_text, keyword, literature_type)
                     
                     links.append(link)
                     names.append(title)
@@ -368,7 +391,7 @@ class KeywordScraper:
         return links, dates, names, articles_data
     
     def _extract_article_metadata(self, soup, index: int, title: str, url: str, 
-                                 publish_date: str, keyword: str = None) -> dict:
+                                 publish_date: str, keyword: str = None, literature_type: str = None) -> dict:
         """提取文章元数据"""
         try:
             # 查找当前文章对应的行
@@ -403,7 +426,8 @@ class KeywordScraper:
                     'journal': journal,
                     'publish_date': publish_date,
                     'keywords': keyword if keyword else "",
-                    'source_type': 'keyword_search'
+                    'source_type': 'keyword_search',
+                    'literature_type': literature_type
                 }
                 
                 return article_data
@@ -420,7 +444,8 @@ class KeywordScraper:
             'journal': "",
             'publish_date': publish_date,
             'keywords': keyword if keyword else "",
-            'source_type': 'keyword_search'
+            'source_type': 'keyword_search',
+            'literature_type': literature_type
         }
     
     def _go_to_next_page(self, driver) -> bool:
@@ -481,29 +506,32 @@ class KeywordScraper:
         
         self.logger.info("所有关键词搜索完成")
     
-    def search_keywords(self, keywords: List[str], result_count: int = None) -> List[dict]:
+    def search_keywords(self, keywords: List[str], result_count: int = None, literature_type: str = None) -> List[dict]:
         """
         搜索关键词并返回结果
         
         Args:
             keywords: 关键词列表
             result_count: 每个关键词的结果数量
+            literature_type: 文献类型
             
         Returns:
             List[dict]: 搜索结果列表，每个元素包含关键词和文件信息
         """
         keywords = keywords or list(Config.KEYWORDS)
         result_count = result_count or Config.RESULT_COUNT
+        literature_type = literature_type or Config.DEFAULT_LITERATURE_TYPE
         results = []
         
-        self.logger.info(f"开始搜索 {len(keywords)} 个关键词")
+        lit_name = Config.LITERATURE_TYPES[literature_type]['name']
+        self.logger.info(f"开始搜索 {len(keywords)} 个关键词，文献类型: {lit_name}")
         
         for i, keyword in enumerate(keywords, 1):
             try:
-                self.logger.info(f"搜索进度: {i}/{len(keywords)} - {keyword}")
+                self.logger.info(f"搜索进度: {i}/{len(keywords)} - {keyword} ({lit_name})")
                 
                 # 执行单个关键词搜索
-                self.scrape_keyword(keyword, result_count)
+                self.scrape_keyword(keyword, result_count, literature_type)
                 
                 # 从数据库获取搜索结果
                 articles = db.get_articles(
